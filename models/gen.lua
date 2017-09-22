@@ -31,7 +31,7 @@ function Generator.create_model(type, opt)
 
     local rep = math.log(type, 2) - 3
     for i = 1, rep do
-        local ns = (rep-1)*ngf
+        local ns = (i-1)*ngf
         if i == 1 then ns = 64 end
         model:add(SConv(ns, i*ngf, 3, 3, 1, 1, 1, 1))
         model:add(ELU())
@@ -39,7 +39,7 @@ function Generator.create_model(type, opt)
         model:add(ELU())
         model:add(UpSampleNearest(2.0))
     end
-    model:add(SConv(rep*ngf, nc, 3, 3, 1, 1))
+    model:add(SConv(rep*ngf, nc, 3, 3, 1, 1, 1, 1))
     model:add(nn.Tanh())
 
 	return model

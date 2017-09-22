@@ -20,6 +20,8 @@ function M.parse(arg)
 	cmd:option('-loadSize', 80, 'resize the loaded image to load size maintatining aspect ratio.')
 	cmd:option('-sampleSize', 64, 'size of random crops')
     cmd:option('-gamma', 0.5, 'gamma factor of BEGAN')
+    cmd:option('-lambda', 0.001, 'lambda factor of BEGAN')
+
 
 
 	---------------- General options ---------------
@@ -32,7 +34,7 @@ function M.parse(arg)
 	cmd:option('-nthreads', 8, '# of workers to use for data loading.')
 	cmd:option('-display', true, 'true : display server on / false : display server off')
 	cmd:option('-display_id', 10, 'display window id.')
-	cmd:option('-display_iter', 10, '# of iterations after which display is updated.')
+	cmd:option('-display_iter', 5, '# of iterations after which display is updated.')
 	cmd:option('-display_server_ip', '10.64.81.227', 'host server ip address.')
 	cmd:option('-display_server_port', 8000, 'host server port.')
 	cmd:option('-sever_name', 'dcgan-test', 'server name.')
