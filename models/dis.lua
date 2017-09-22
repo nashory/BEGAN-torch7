@@ -69,6 +69,7 @@ function Discrim.create_model(type, opt)
         dec:add(UpSampleNearest(2.0))
     end
     dec:add(SConv(rep*ndf, nc, 3, 3, 1, 1))
+    dec:add(nn.Tanh())
 
     -- combine model(enc, dec) and return.
     model:add(enc):add(dec)

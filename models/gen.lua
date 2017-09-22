@@ -40,6 +40,7 @@ function Generator.create_model(type, opt)
         model:add(UpSampleNearest(2.0))
     end
     model:add(SConv(rep*ngf, nc, 3, 3, 1, 1))
+    model:add(nn.Tanh())
 
 	return model
 end
