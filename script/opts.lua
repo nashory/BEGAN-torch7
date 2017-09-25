@@ -19,7 +19,7 @@ function M.parse(arg)
 	cmd:option('-snapshot_every', 5, 'will save models every N epoch.')
 	cmd:option('-loadSize', 80, 'resize the loaded image to load size maintatining aspect ratio.')
 	cmd:option('-sampleSize', 64, 'size of random crops')
-    cmd:option('-gamma', 0.5, 'gamma factor of BEGAN')
+    cmd:option('-gamma', 0.97, 'gamma factor of BEGAN')
     cmd:option('-lambda', 0.001, 'lambda factor of BEGAN')
 
 

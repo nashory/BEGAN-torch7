@@ -55,7 +55,7 @@ end
 BEGAN['fDx'] = function(self, x)
     self.dis:zeroGradParameters()
     
-    -- generate noise(z)
+    -- generate noise(z_D)
     if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
     elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
     
@@ -64,7 +64,7 @@ BEGAN['fDx'] = function(self, x)
     self.x_ae = self.dis:forward(self.x:cuda()):clone()
     self.errD_real = self.crit_adv:forward(self.x:cuda(), self.x_ae:cuda())
     local d_errD_real = self.crit_adv:backward(self.x:cuda(), self.x_ae:cuda()):clone()
-    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:cuda():mul(-1)):clone()
+    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:mul(-1):cuda()):clone()
 
     -- train with fake(x_tilde)
     self.z = self.noise:clone():cuda()
@@ -82,6 +82,12 @@ end
 
 BEGAN['fGx'] = function(self, x)
     self.gen:zeroGradParameters()
+    
+    -- generate noise(z_D)
+    if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
+    elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
+    
+    self.z = self.noise:clone():cuda()
     local errG = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
     local d_errG = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
     local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:cuda()):clone()
@@ -122,15 +128,15 @@ function BEGAN:train(epoch, loader)
             -- forward/backward and update weights with optimizer.
             -- DO NOT CHANGE OPTIMIZATION ORDER.
             local err_dis = self:fDx()
-            local err_gen = self:fGx()
 
             -- weight update.
-            optimizer.gen.method(self.param_gen, self.gradParam_gen, optimizer.gen.config.lr,
-                                optimizer.gen.config.beta1, optimizer.gen.config.beta2,
-                                optimizer.gen.config.elipson, optimizer.gen.optimstate)
             optimizer.dis.method(self.param_dis, self.gradParam_dis, optimizer.dis.config.lr,
                                 optimizer.dis.config.beta1, optimizer.dis.config.beta2,
                                 optimizer.dis.config.elipson, optimizer.dis.optimstate)
+            local err_gen = self:fGx()
+            optimizer.gen.method(self.param_gen, self.gradParam_gen, optimizer.gen.config.lr,
+                                optimizer.gen.config.beta1, optimizer.gen.config.beta2,
+                                optimizer.gen.config.elipson, optimizer.gen.optimstate)
 
             -- save model at every specified epoch.
             local data = {dis = self.dis, gen = self.gen}
