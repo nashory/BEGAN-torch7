@@ -35,12 +35,14 @@ function Generator.create_model(type, opt)
         if i == 1 then ns = 64 end
         model:add(SConv(ns, i*ngf, 3, 3, 1, 1, 1, 1))
         model:add(ELU())
-        model:add(SConv(i*ngf, i*ngf, 3, 3, 1, 1, 1, 1))
-        model:add(ELU())
+        model:add(SBatchNorm(i*ngf)):add(ELU())
+        --model:add(SConv(i*ngf, i*ngf, 3, 3, 1, 1, 1, 1))
+        model:add(SBatchNorm(i*ngf)):add(ELU())
+        --model:add(ELU())
         model:add(UpSampleNearest(2.0))
     end
     model:add(SConv(rep*ngf, nc, 3, 3, 1, 1, 1, 1))
-    model:add(nn.Tanh())
+    --model:add(nn.Tanh())
 
 	return model
 end

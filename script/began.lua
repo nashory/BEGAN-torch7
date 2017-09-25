@@ -48,6 +48,7 @@ function BEGAN:__init(model, criterion, opt, optimstate)
     -- get models and criterion.
     self.gen = model[1]:cuda()
     self.dis = model[2]:cuda()
+    self.dis2 = self.dis:clone()
     self.crit_adv = criterion[1]:cuda()
 end
 
@@ -58,21 +59,21 @@ BEGAN['fDx'] = function(self, x)
     if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
     elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
     
+    -- train with fake(x_tilde)
+    self.z = self.noise:clone():cuda()
+    self.x_tilde = self.gen:forward(self.z):clone()
+    self.x_tilde_ae = self.dis:forward(self.x_tilde):clone()
+    self.errD_fake = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
+    local d_errD_fake = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
+    local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(1*self.kt):cuda()):clone()
+
     -- train with real(x)
     self.x = self.dataset:getBatch():mul(2):add(-1)     -- image range [-1,1]
-    self.x_ae = self.dis:forward(self.x:cuda())
+    self.x_ae = self.dis:forward(self.x:cuda()):clone()
     self.errD_real = self.crit_adv:forward(self.x:cuda(), self.x_ae:cuda())
-    local d_errD_real = self.crit_adv:backward(self.x:cuda(), self.x_ae:cuda())
-    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:mul(-1):cuda())
-   
-    -- train with fake(x_tilde)
-    self.z = self.noise:clone()
-    self.x_tilde = self.gen:forward(self.z:cuda())
-    self.x_tilde_ae = self.dis:forward(self.x_tilde:cuda())
-    self.errD_fake = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
-    local d_errD_fake = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
-    local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(1*self.kt):cuda())
-    
+    local d_errD_real = self.crit_adv:backward(self.x:cuda(), self.x_ae:cuda()):clone()
+    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:cuda():mul(-1)):clone()
+
 
     -- return error.
     local errD = self.errD_real + self.errD_fake
@@ -83,9 +84,9 @@ end
 BEGAN['fGx'] = function(self, x)
     self.gen:zeroGradParameters()
     local errG = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
-    local d_errG = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
-    local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:mul(-1):cuda())
-    local d_gen_dummy = self.gen:backward(self.z:cuda(), d_gen_dis:cuda())
+    local d_errG = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
+    local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:cuda())
+    local d_gen_dummy = self.gen:backward(self.z:cuda(), d_gen_dis:mul(-1):cuda()):clone()
 
     -- closed loop control for kt
     self.kt = self.kt + self.lambda*(self.gamma*self.errD_real - errG)
@@ -94,7 +95,7 @@ BEGAN['fGx'] = function(self, x)
 
     -- Convergence measure
     self.measure = self.errD_real + math.abs(self.gamma*self.errD_real - errG)
-
+    
     return errG
 end
 
@@ -125,12 +126,12 @@ function BEGAN:train(epoch, loader)
             local err_gen = self:fGx()
 
             -- weight update.
-            optimizer.dis.method(self.param_dis, self.gradParam_dis, optimizer.dis.config.lr,
-                                optimizer.dis.config.beta1, optimizer.dis.config.beta2,
-                                optimizer.dis.config.elipson, optimizer.dis.optimstate)
             optimizer.gen.method(self.param_gen, self.gradParam_gen, optimizer.gen.config.lr,
                                 optimizer.gen.config.beta1, optimizer.gen.config.beta2,
                                 optimizer.gen.config.elipson, optimizer.gen.optimstate)
+            optimizer.dis.method(self.param_dis, self.gradParam_dis, optimizer.dis.config.lr,
+                                optimizer.dis.config.beta1, optimizer.dis.config.beta2,
+                                optimizer.dis.config.elipson, optimizer.dis.optimstate)
 
             -- save model at every specified epoch.
             local data = {dis = self.dis, gen = self.gen}
@@ -138,16 +139,20 @@ function BEGAN:train(epoch, loader)
 
             -- display server.
             if (totalIter%self.opt.display_iter==0) and (self.opt.display) then
-                local im_fake = self.x_tilde:clone()
                 local im_real = self.x:clone()
+                local im_fake = self.x_tilde:clone()
+                local im_real_ae = self.x_ae:clone()
+                local im_fake_ae = self.x_tilde_ae:clone()
                 
                 self.disp.image(im_real, {win=self.opt.display_id + self.opt.gpuid, title=self.opt.server_name})
-                self.disp.image(im_fake, {win=self.opt.display_id*5 + self.opt.gpuid, title=self.opt.server_name})
+                self.disp.image(im_fake, {win=self.opt.display_id*2 + self.opt.gpuid, title=self.opt.server_name})
+                self.disp.image(im_real_ae, {win=self.opt.display_id*4 + self.opt.gpuid, title=self.opt.server_name})
+                self.disp.image(im_fake_ae, {win=self.opt.display_id*6 + self.opt.gpuid, title=self.opt.server_name})
 
 
                 -- save image as png (size 64x64, grid 8x8 fixed).
                 local im_png = torch.Tensor(3, self.sampleSize*8, self.sampleSize*8):zero()
-                local x_test = self.gen:forward(self.test_noise:cuda())
+                local x_test = self.gen:forward(self.test_noise:cuda()):clone()
                 for i = 1, 8 do
                     for j =  1, 8 do
                         im_png[{{},{self.sampleSize*(j-1)+1, self.sampleSize*(j)},{self.sampleSize*(i-1)+1, self.sampleSize*(i)}}]:copy(x_test[{{8*(i-1)+j},{},{},{}}]:clone():add(1):div(2))

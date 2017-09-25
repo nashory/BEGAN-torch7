@@ -2,16 +2,20 @@
 
 
 local nn = require 'nn'
+local nninit= require 'nninit'
 
 
 local Discrim = {}
 
 local SBatchNorm = cudnn.SpatialBatchNormalization
 local SConv = cudnn.SpatialConvolution
+local SFullConv = cudnn.SpatialFullConvolution
 local LeakyReLU = nn.LeakyReLU
 local ELU = nn.ELU
 local UpSampleNearest = nn.SpatialUpSamplingNearest
+local UpSampleBilinear = nn.SpatialUpSamplingBilinear
 local Linear = nn.Linear
+local AvgPool = nn.SpatialAveragePooling
 
 
 -- Encode input context to noise
@@ -35,21 +39,27 @@ function Discrim.create_model(type, opt)
     -- state size : (ndf) x type x type
     for i=1, rep do
         enc:add(SConv(i*ndf, i*ndf, 3, 3, 1, 1, 1, 1))
-        enc:add(ELU())
-        enc:add(SConv(i*ndf, i*ndf, 3, 3, 1, 1, 1, 1))
-        enc:add(ELU())
+        enc:add(SBatchNorm(i*ndf)):add(ELU())
+        enc:add(SConv(i*ndf, (i+1)*ndf, 3, 3, 1, 1, 1, 1))
+        enc:add(SBatchNorm((i+1)*ndf)):add(ELU())
+        --enc:add(ELU())
+        enc:add(AvgPool(2, 2, 2, 2))            -- downsampling by factor of 2.
+        --[[
         if i == rep then
             enc:add(SConv(i*ndf, (i+1)*ndf, 3, 3, 2, 2, 1, 1))
         else 
             enc:add(SConv(i*ndf, (i+1)*ndf, 3, 3, 2, 2, 1, 1))    -- use Conv for downsampling instead of MaxPool
             enc:add(ELU())
         end
+        ]]--
     end
     -- state size : (ndf*rep) x 8 x 8
     enc:add(SConv((rep+1)*ndf, (rep+1)*ndf, 3, 3, 1, 1, 1, 1))
-    enc:add(ELU())
+    enc:add(SBatchNorm((rep+1)*ndf)):add(ELU())
+    --enc:add(ELU())
     enc:add(SConv((rep+1)*ndf, 64, 3, 3, 1, 1, 1, 1))       -- we fix output conv units to 64 to reduce memory usage. (64x8x8=4096 units)
-    enc:add(ELU())
+    enc:add(SBatchNorm(64)):add(ELU())
+    --enc:add(ELU())
     -- state size : (ndf*(rep+1)) x 8 x 8
     enc:add(nn.Reshape(4096))
     enc:add(Linear(4096, nh))
@@ -64,13 +74,17 @@ function Discrim.create_model(type, opt)
         local ns = (i-1)*ndf
         if i==1 then ns = 64 end
         dec:add(SConv(ns, i*ndf, 3, 3, 1, 1, 1, 1))
-        dec:add(ELU())
+        dec:add(SBatchNorm((i)*ndf)):add(ELU())
+        --dec:add(ELU())
         dec:add(SConv(i*ndf, i*ndf, 3, 3, 1, 1, 1, 1))
-        dec:add(ELU())
+        dec:add(SBatchNorm((i)*ndf)):add(ELU())
+        --dec:add(ELU())
         dec:add(UpSampleNearest(2.0))
+        --dec:add(UpSampleBilinear(2.0))
+        --dec:add(SFullConv(i*ndf, i*ndf, 4, 4, 2, 2, 1, 1))
     end
     dec:add(SConv(rep*ndf, nc, 3, 3, 1, 1, 1, 1))
-    dec:add(nn.Tanh())
+    --dec:add(nn.Tanh())
 
     -- combine model(enc, dec) and return.
     model:add(enc):add(dec)

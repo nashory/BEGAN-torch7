@@ -16,7 +16,7 @@ function M.parse(arg)
 	-------------- Frequently Changed options -----------
 	cmd:option('-gpuid', 0, 'which gpu to use. -1 = use CPU')
 	cmd:option('-name', 'CelebA_dcgan', 'experiments numbering.')
-	cmd:option('-snapshot_every', 1, 'will save models every N epoch.')
+	cmd:option('-snapshot_every', 5, 'will save models every N epoch.')
 	cmd:option('-loadSize', 80, 'resize the loaded image to load size maintatining aspect ratio.')
 	cmd:option('-sampleSize', 64, 'size of random crops')
     cmd:option('-gamma', 0.5, 'gamma factor of BEGAN')
@@ -49,7 +49,7 @@ function M.parse(arg)
 	cmd:option('-ngf', 64, 'output dimension of first conv layer of generator.')
 	cmd:option('-ndf', 64, 'output dimension of first conv layer of discriminator.')
 	cmd:option('-nc', 3, 'input image channel. (rgb:3, gray:1)')
-	cmd:option('-nh', 512, '# of dimension for input noise(h)')
+	cmd:option('-nh', 256, '# of dimension for input noise(h)')
 	cmd:text()
 
 	-- return opt.
