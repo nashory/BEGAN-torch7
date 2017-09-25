@@ -34,9 +34,9 @@ function Generator.create_model(type, opt)
         local ns = (i-1)*ngf
         if i == 1 then ns = 64 end
         model:add(SConv(ns, i*ngf, 3, 3, 1, 1, 1, 1))
-        model:add(ELU())
+        --model:add(ELU())
         model:add(SBatchNorm(i*ngf)):add(ELU())
-        --model:add(SConv(i*ngf, i*ngf, 3, 3, 1, 1, 1, 1))
+        model:add(SConv(i*ngf, i*ngf, 3, 3, 1, 1, 1, 1))
         model:add(SBatchNorm(i*ngf)):add(ELU())
         --model:add(ELU())
         model:add(UpSampleNearest(2.0))

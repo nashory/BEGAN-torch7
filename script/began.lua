@@ -59,6 +59,13 @@ BEGAN['fDx'] = function(self, x)
     if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
     elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
     
+    -- train with real(x)
+    self.x = self.dataset:getBatch()
+    self.x_ae = self.dis:forward(self.x:cuda()):clone()
+    self.errD_real = self.crit_adv:forward(self.x:cuda(), self.x_ae:cuda())
+    local d_errD_real = self.crit_adv:backward(self.x:cuda(), self.x_ae:cuda()):clone()
+    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:cuda():mul(-1)):clone()
+
     -- train with fake(x_tilde)
     self.z = self.noise:clone():cuda()
     self.x_tilde = self.gen:forward(self.z):clone()
@@ -66,14 +73,6 @@ BEGAN['fDx'] = function(self, x)
     self.errD_fake = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
     local d_errD_fake = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
     local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(1*self.kt):cuda()):clone()
-
-    -- train with real(x)
-    self.x = self.dataset:getBatch():mul(2):add(-1)     -- image range [-1,1]
-    self.x_ae = self.dis:forward(self.x:cuda()):clone()
-    self.errD_real = self.crit_adv:forward(self.x:cuda(), self.x_ae:cuda())
-    local d_errD_real = self.crit_adv:backward(self.x:cuda(), self.x_ae:cuda()):clone()
-    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:cuda():mul(-1)):clone()
-
 
     -- return error.
     local errD = self.errD_real + self.errD_fake
@@ -85,7 +84,7 @@ BEGAN['fGx'] = function(self, x)
     self.gen:zeroGradParameters()
     local errG = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
     local d_errG = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
-    local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:cuda())
+    local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:cuda()):clone()
     local d_gen_dummy = self.gen:backward(self.z:cuda(), d_gen_dis:mul(-1):cuda()):clone()
 
     -- closed loop control for kt
