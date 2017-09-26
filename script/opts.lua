@@ -41,7 +41,7 @@ function M.parse(arg)
 
 
 	-------------- Training options---------------
-	cmd:option('-batchSize', 64, 'batch size for training')
+	cmd:option('-batchSize', 16, 'batch size for training')
 	cmd:option('-lr', 0.0002, 'learning rate')
 	cmd:option('-noisetype', 'uniform', 'uniform/normal distribution noise.')
 
@@ -49,7 +49,7 @@ function M.parse(arg)
 	cmd:option('-ngf', 64, 'output dimension of first conv layer of generator.')
 	cmd:option('-ndf', 64, 'output dimension of first conv layer of discriminator.')
 	cmd:option('-nc', 3, 'input image channel. (rgb:3, gray:1)')
-	cmd:option('-nh', 256, '# of dimension for input noise(h)')
+	cmd:option('-nh', 128, '# of dimension for input noise(h)')
 	cmd:text()
 
 	-- return opt.

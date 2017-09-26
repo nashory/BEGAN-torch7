@@ -29,13 +29,13 @@ function Generator.create_model(type, opt)
 	assert(type==64 or type==128 or type == 256, 'erorr. type argument must \'64\' or \'128\' or \'256\'.')
 
 	local nc = opt.nc
-	local nz = opt.nh
+	local nh = opt.nh
 	local ngf = opt.ngf
 	local model = nn.Sequential()
     
     if type == 256 then
 		-- input is (nBottleneck) x 1 x 1
-		model:add(SFullConv(nz, 8*ngf, 4, 4):noBias())
+		model:add(SFullConv(nh, 8*ngf, 4, 4):noBias())
 		model:add(SBatchNorm(8*ngf)):add(nn.ReLU(true))
 		-- state size : (8*ngf) x 4 x 4
 		model:add(SFullConv(8*ngf, 4*ngf, 4, 4, 2, 2, 1, 1):noBias())
@@ -59,7 +59,7 @@ function Generator.create_model(type, opt)
 
 	elseif type == 128 then
 		-- input is (nBottleneck) x 1 x 1
-		model:add(SFullConv(nz, 8*ngf, 4, 4):noBias())
+		model:add(SFullConv(nh, 8*ngf, 4, 4):noBias())
 		model:add(SBatchNorm(8*ngf)):add(nn.ReLU(true))
 		-- state size : (8*ngf) x 4 x 4
 		model:add(SFullConv(8*ngf, 4*ngf, 4, 4, 2, 2, 1, 1):noBias())
@@ -78,8 +78,8 @@ function Generator.create_model(type, opt)
 		model:add(nn.Tanh())
 		-- state size : (nc) x 128 x 128	
 	elseif type == 64 then
-		-- input is (nz) x 1 x 1
-		model:add(SFullConv(nz, 8*ngf, 4, 4):noBias())
+		-- input is (nh) x 1 x 1
+		model:add(SFullConv(nh, 8*ngf, 4, 4):noBias())
 		model:add(SBatchNorm(8*ngf)):add(nn.ReLU(true))
 		-- state size : (8*ngf) x 4 x 4
 		model:add(SFullConv(8*ngf, 4*ngf, 4, 4, 2, 2, 1, 1):noBias())

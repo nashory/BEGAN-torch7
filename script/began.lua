@@ -34,9 +34,10 @@ function BEGAN:__init(model, criterion, opt, optimstate)
     self.kt = 0         -- initialize same with the paper.
     self.batchSize = opt.batchSize
     self.sampleSize = opt.sampleSize
+    self.thres = 0.02
     
     -- generate test_noise(fixed)
-    self.test_noise = torch.Tensor(self.batchSize, self.nh)
+    self.test_noise = torch.Tensor(64, self.nh, 1, 1)
     if self.noisetype == 'uniform' then self.test_noise:uniform(-1,1)
     elseif self.noisetype == 'normal' then self.test_noise:normal(0,1) end
     
@@ -75,7 +76,7 @@ BEGAN['fDx'] = function(self, x)
     local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(1*self.kt):cuda()):clone()
 
     -- return error.
-    local errD = self.errD_real + self.errD_fake
+    local errD = {real=self.errD_real, fake=self.errD_fake}
     return errD
 end
 
@@ -83,20 +84,16 @@ end
 BEGAN['fGx'] = function(self, x)
     self.gen:zeroGradParameters()
     
-    -- generate noise(z_D)
-    if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
-    elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
-    
-    self.z = self.noise:clone():cuda()
     local errG = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
     local d_errG = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
-    local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:cuda()):clone()
-    local d_gen_dummy = self.gen:backward(self.z:cuda(), d_gen_dis:mul(-1):cuda()):clone()
+    local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:mul(-1):cuda()):clone()
+    local d_gen_dummy = self.gen:backward(self.z:cuda(), d_gen_dis:cuda()):clone()
 
     -- closed loop control for kt
-    self.kt = self.kt + self.lambda*(self.gamma*self.errD_real - errG)
-    if self.kt > 1.0 then self.kt = 1.0
+    self.kt = self.kt - self.lambda*(self.gamma*self.errD_real - errG)
+    if self.kt > self.thres then self.kt = self.thres
     elseif self.kt < 0 then self.kt = 0 end
+
 
     -- Convergence measure
     self.measure = self.errD_real + math.abs(self.gamma*self.errD_real - errG)
@@ -107,7 +104,7 @@ end
 
 function BEGAN:train(epoch, loader)
     -- Initialize data variables.
-    self.noise = torch.Tensor(self.batchSize, self.nh)
+    self.noise = torch.Tensor(self.batchSize, self.nh, 1, 1)
 
     -- get network weights.
     self.dataset = loader.new(self.opt.nthreads, self.opt)
@@ -168,7 +165,7 @@ function BEGAN:train(epoch, loader)
             end
 
             -- logging
-            local log_msg = string.format('Epoch: [%d][%6d/%6d]  Loss_D: %.4f | Loss_G: %.4f | kt: %.6f | Convergence: %.4f', e, iter, iter_per_epoch, err_dis, err_gen, self.kt, self.measure)
+            local log_msg = string.format('Epoch: [%d][%6d/%6d]  Loss_D(real): %.4f | Loss_D(fake): %.4f | Loss_G: %.4f | kt: %.6f | Convergence: %.4f', e, iter, iter_per_epoch, err_dis.real, err_dis.fake, err_gen, self.kt, self.measure)
             print(log_msg)
         end
     end
