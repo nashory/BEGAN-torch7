@@ -44,7 +44,8 @@ print ('BEGAN discriminator(enc/dec) : ')
 print(began_dis)
 
 --loss metrics
-local began_criterion = {nn.AbsCriterion()}
+--local began_criterion = {nn.AbsCriterion()}
+local began_criterion = {nn.SmoothL1Criterion()}
 
 -- run trainer
 local optimstate = {}

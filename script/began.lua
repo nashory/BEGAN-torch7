@@ -34,7 +34,7 @@ function BEGAN:__init(model, criterion, opt, optimstate)
     self.kt = 0         -- initialize same with the paper.
     self.batchSize = opt.batchSize
     self.sampleSize = opt.sampleSize
-    self.thres = 0.02
+    self.thres = 1.0
     
     -- generate test_noise(fixed)
     self.test_noise = torch.Tensor(64, self.nh, 1, 1)
@@ -62,21 +62,24 @@ BEGAN['fDx'] = function(self, x)
     
     -- train with real(x)
     self.x = self.dataset:getBatch()
-    self.x_ae = self.dis:forward(self.x:cuda()):clone()
-    self.errD_real = self.crit_adv:forward(self.x:cuda(), self.x_ae:cuda())
-    local d_errD_real = self.crit_adv:backward(self.x:cuda(), self.x_ae:cuda()):clone()
-    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:mul(-1):cuda()):clone()
+    self.dis:forward(self.x:cuda())
+    self.x_ae = self.dis.output:clone()
+    self.errD_real = self.crit_adv:forward(self.x_ae:cuda(), self.x:cuda())
+    local d_errD_real = self.crit_adv:backward(self.x_ae:cuda(), self.x:cuda()):clone()
+    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:cuda())
 
     -- train with fake(x_tilde)
     self.z = self.noise:clone():cuda()
-    self.x_tilde = self.gen:forward(self.z):clone()
-    self.x_tilde_ae = self.dis:forward(self.x_tilde):clone()
-    self.errD_fake = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
-    local d_errD_fake = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
-    local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(1*self.kt):cuda()):clone()
+    self.gen:forward(self.z)
+    self.x_tilde = self.gen.output:clone()
+    self.dis:forward(self.x_tilde)
+    self.x_tilde_ae = self.dis.output:clone()
+    self.errD_fake = self.crit_adv:forward(self.x_tilde_ae:cuda(), self.x_tilde:cuda())
+    local d_errD_fake = self.crit_adv:backward(self.x_tilde_ae:cuda(), self.x_tilde:cuda()):clone()
+    local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(-self.kt):cuda())
 
     -- return error.
-    local errD = {real=self.errD_real, fake=self.errD_fake}
+    local errD = {real = self.errD_real, fake = self.errD_fake}
     return errD
 end
 
@@ -84,21 +87,33 @@ end
 BEGAN['fGx'] = function(self, x)
     self.gen:zeroGradParameters()
     
-    local errG = self.crit_adv:forward(self.x_tilde:cuda(), self.x_tilde_ae:cuda())
-    local d_errG = self.crit_adv:backward(self.x_tilde:cuda(), self.x_tilde_ae:cuda()):clone()
-    local d_gen_dis = self.dis:updateGradInput(self.x_tilde:cuda(), d_errG:mul(-1):cuda()):clone()
-    local d_gen_dummy = self.gen:backward(self.z:cuda(), d_gen_dis:cuda()):clone()
+    -- generate noise(z_G)
+    if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
+    elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
+    
+    local z = self.noise:clone():cuda()
+    self.gen:forward(z)
+    local x_tilde = self.gen.output:clone()
+    self.dis:forward(x_tilde)
+    local x_tilde_ae = self.dis.output:clone()
+    local errG = self.crit_adv:forward(x_tilde_ae:cuda(), x_tilde:cuda())
+    --local errG = self.errD_fake
+    local d_errG = self.crit_adv:backward(x_tilde_ae:cuda(), x_tilde:cuda())
+    local d_gen_dis = self.dis:updateGradInput(x_tilde:cuda(), d_errG:cuda())
+    local d_gen_dummy = self.gen:backward(z:cuda(), d_gen_dis:cuda())
 
     -- closed loop control for kt
-    self.kt = self.kt - self.lambda*(self.gamma*self.errD_real - errG)
+    local delta = self.gamma*self.errD_real - errG
+    self.kt = self.kt + self.lambda*(delta)
+
     if self.kt > self.thres then self.kt = self.thres
     elseif self.kt < 0 then self.kt = 0 end
 
 
     -- Convergence measure
-    self.measure = self.errD_real + math.abs(self.gamma*self.errD_real - errG)
-    
-    return errG
+    self.measure = self.errD_real + math.abs(delta)
+
+    return {err = errG, delta = delta}
 end
 
 
@@ -125,12 +140,12 @@ function BEGAN:train(epoch, loader)
             -- forward/backward and update weights with optimizer.
             -- DO NOT CHANGE OPTIMIZATION ORDER.
             local err_dis = self:fDx()
+            local err_gen = self:fGx()
 
             -- weight update.
             optimizer.dis.method(self.param_dis, self.gradParam_dis, optimizer.dis.config.lr,
                                 optimizer.dis.config.beta1, optimizer.dis.config.beta2,
                                 optimizer.dis.config.elipson, optimizer.dis.optimstate)
-            local err_gen = self:fGx()
             optimizer.gen.method(self.param_gen, self.gradParam_gen, optimizer.gen.config.lr,
                                 optimizer.gen.config.beta1, optimizer.gen.config.beta2,
                                 optimizer.gen.config.elipson, optimizer.gen.optimstate)
@@ -154,7 +169,8 @@ function BEGAN:train(epoch, loader)
 
                 -- save image as png (size 64x64, grid 8x8 fixed).
                 local im_png = torch.Tensor(3, self.sampleSize*8, self.sampleSize*8):zero()
-                local x_test = self.gen:forward(self.test_noise:cuda()):clone()
+                self.gen:forward(self.test_noise:cuda())
+                local x_test = self.gen.output:clone()
                 for i = 1, 8 do
                     for j =  1, 8 do
                         im_png[{{},{self.sampleSize*(j-1)+1, self.sampleSize*(j)},{self.sampleSize*(i-1)+1, self.sampleSize*(i)}}]:copy(x_test[{{8*(i-1)+j},{},{},{}}]:clone():add(1):div(2))
@@ -165,7 +181,7 @@ function BEGAN:train(epoch, loader)
             end
 
             -- logging
-            local log_msg = string.format('Epoch: [%d][%6d/%6d]  Loss_D(real): %.4f | Loss_D(fake): %.4f | Loss_G: %.4f | kt: %.6f | Convergence: %.4f', e, iter, iter_per_epoch, err_dis.real, err_dis.fake, err_gen, self.kt, self.measure)
+            local log_msg = string.format('Epoch: [%d][%6d/%6d]  D(real): %.4f | D(fake): %.4f | G: %.4f | Delta: %.4f | kt: %.6f | Convergence: %.4f', e, iter, iter_per_epoch, err_dis.real, err_dis.fake, err_gen.err, err_gen.delta, self.kt, self.measure)
             print(log_msg)
         end
     end
