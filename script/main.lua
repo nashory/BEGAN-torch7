@@ -1,9 +1,11 @@
 require 'nn'
 require 'cunn'
 local opts = require 'script.opts'
-local gen = require 'models.gen'
-local dis = require 'models.dis'
+local gen = require 'models.original.gen'
+local dis = require 'models.original.dis'
 
+--local gen = require 'models.gen'
+--local dis = require 'models.dis'
 
 -- basic settings.
 torch.setdefaulttensortype('torch.FloatTensor')
@@ -44,8 +46,8 @@ print ('BEGAN discriminator(enc/dec) : ')
 print(began_dis)
 
 --loss metrics
---local began_criterion = {nn.AbsCriterion()}
-local began_criterion = {nn.SmoothL1Criterion()}
+local began_criterion = {nn.AbsCriterion()}
+--local began_criterion = {nn.SmoothL1Criterion()}
 
 -- run trainer
 local optimstate = {}

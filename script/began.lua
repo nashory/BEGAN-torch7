@@ -37,7 +37,7 @@ function BEGAN:__init(model, criterion, opt, optimstate)
     self.thres = 1.0
     
     -- generate test_noise(fixed)
-    self.test_noise = torch.Tensor(64, self.nh, 1, 1)
+    self.test_noise = torch.Tensor(64, self.nh)
     if self.noisetype == 'uniform' then self.test_noise:uniform(-1,1)
     elseif self.noisetype == 'normal' then self.test_noise:normal(0,1) end
     
@@ -49,7 +49,6 @@ function BEGAN:__init(model, criterion, opt, optimstate)
     -- get models and criterion.
     self.gen = model[1]:cuda()
     self.dis = model[2]:cuda()
-    self.dis2 = self.dis:clone()
     self.crit_adv = criterion[1]:cuda()
 end
 
@@ -59,15 +58,15 @@ BEGAN['fDx'] = function(self, x)
     -- generate noise(z_D)
     if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
     elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
-    
+   
     -- train with real(x)
     self.x = self.dataset:getBatch()
     self.dis:forward(self.x:cuda())
     self.x_ae = self.dis.output:clone()
     self.errD_real = self.crit_adv:forward(self.x_ae:cuda(), self.x:cuda())
     local d_errD_real = self.crit_adv:backward(self.x_ae:cuda(), self.x:cuda()):clone()
-    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:cuda())
-
+    local d_x_ae = self.dis:backward(self.x:cuda(), d_errD_real:cuda()):clone()
+    
     -- train with fake(x_tilde)
     self.z = self.noise:clone():cuda()
     self.gen:forward(self.z)
@@ -76,8 +75,9 @@ BEGAN['fDx'] = function(self, x)
     self.x_tilde_ae = self.dis.output:clone()
     self.errD_fake = self.crit_adv:forward(self.x_tilde_ae:cuda(), self.x_tilde:cuda())
     local d_errD_fake = self.crit_adv:backward(self.x_tilde_ae:cuda(), self.x_tilde:cuda()):clone()
-    local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(-self.kt):cuda())
-
+    local d_x_tilde_ae = self.dis:backward(self.x_tilde:cuda(), d_errD_fake:mul(-self.kt):cuda()):clone()
+    
+    
     -- return error.
     local errD = {real = self.errD_real, fake = self.errD_fake}
     return errD
@@ -86,7 +86,7 @@ end
 
 BEGAN['fGx'] = function(self, x)
     self.gen:zeroGradParameters()
-    
+   
     -- generate noise(z_G)
     if self.noisetype == 'uniform' then self.noise:uniform(-1,1)
     elseif self.noisetype == 'normal' then self.noise:normal(0,1) end
@@ -97,10 +97,10 @@ BEGAN['fGx'] = function(self, x)
     self.dis:forward(x_tilde)
     local x_tilde_ae = self.dis.output:clone()
     local errG = self.crit_adv:forward(x_tilde_ae:cuda(), x_tilde:cuda())
-    --local errG = self.errD_fake
-    local d_errG = self.crit_adv:backward(x_tilde_ae:cuda(), x_tilde:cuda())
-    local d_gen_dis = self.dis:updateGradInput(x_tilde:cuda(), d_errG:cuda())
-    local d_gen_dummy = self.gen:backward(z:cuda(), d_gen_dis:cuda())
+    
+    local d_errG = self.crit_adv:updateGradInput(x_tilde_ae:cuda(), x_tilde:cuda()):clone()
+    local d_gen_dis = self.dis:updateGradInput(x_tilde:cuda(), d_errG:cuda()):clone()
+    local d_gen_dummy = self.gen:backward(z:cuda(), d_gen_dis:cuda()):clone()
 
     -- closed loop control for kt
     local delta = self.gamma*self.errD_real - errG
@@ -108,7 +108,6 @@ BEGAN['fGx'] = function(self, x)
 
     if self.kt > self.thres then self.kt = self.thres
     elseif self.kt < 0 then self.kt = 0 end
-
 
     -- Convergence measure
     self.measure = self.errD_real + math.abs(delta)
@@ -119,7 +118,7 @@ end
 
 function BEGAN:train(epoch, loader)
     -- Initialize data variables.
-    self.noise = torch.Tensor(self.batchSize, self.nh, 1, 1)
+    self.noise = torch.Tensor(self.batchSize, self.nh)
 
     -- get network weights.
     self.dataset = loader.new(self.opt.nthreads, self.opt)
